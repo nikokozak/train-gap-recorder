@@ -10,6 +10,7 @@ enum RecorderEventType: String, Codable {
     case udpProbe = "udp_probe"
     case mark = "mark"
     case sessionEnd = "session_end"
+    case note = "note"
 }
 
 struct RecorderSessionStart: Codable {
@@ -205,6 +206,20 @@ struct RecorderMark: Codable {
         case type
         case tMS = "t_ms"
         case kind
+    }
+}
+
+/// A note the rider added after the ride, in Sessions. It is appended after `session_end`, so a
+/// recording can have several. The note typed at Finish is in `session_end` instead.
+struct RecorderNote: Codable {
+    var type: RecorderEventType = .note
+    var addedAt: String
+    var text: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case addedAt = "added_at"
+        case text
     }
 }
 

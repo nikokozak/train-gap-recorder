@@ -50,6 +50,44 @@ final class SessionsStore: ObservableObject {
         refresh()
     }
 
+    /// Appends a note to a recording. The file stays append-only: what the ride recorded is never rewritten.
+    func addNote(_ text: String, to session: SessionInfo) async throws {
+        // NDJSONWriter would create a missing file, holding only the note.
+        guard FileManager.default.fileExists(atPath: session.fileURL.path) else { throw CocoaError(.fileNoSuchFile) }
+        let writer = try NDJSONWriter(fileURL: session.fileURL)
+        do {
+            try await writer.append(RecorderNote(addedAt: iso8601String(Date()), text: text))
+        } catch {
+            await writer.close()
+            throw error
+        }
+        await writer.close()
+    }
+
+    /// Reads the end of the ride and the notes from the whole file. Lines are decoded only when
+    /// they are one of those events: a ride file has thousands of samples and motion batches.
+    nonisolated static func readDetails(url: URL) -> SessionDetails {
+        var details = SessionDetails()
+        guard let data = try? Data(contentsOf: url), let content = String(data: data, encoding: .utf8) else { return details }
+        details.fileSizeBytes = data.count
+        let decoder = JSONDecoder()
+        // JSONEncoder writes no spaces, so the type appears exactly like this. Inside a string,
+        // the quotes would be escaped, so a note's text cannot match.
+        for line in content.split(separator: "\n") {
+            if line.contains(#""type":"session_end""#), let end = try? decoder.decode(RecorderSessionEnd.self, from: Data(line.utf8)) {
+                details.hasEnd = true
+                details.durationSeconds = end.tMS / 1000
+                details.endStationName = end.endStationName
+                if let note = end.note, !note.isEmpty {
+                    details.notes.insert(note, at: 0)  // Typed at Finish: before the ones added later.
+                }
+            } else if line.contains(#""type":"note""#), let note = try? decoder.decode(RecorderNote.self, from: Data(line.utf8)) {
+                details.notes.append(note.text)
+            }
+        }
+        return details
+    }
+
     private func readSessionStart(url: URL) -> SessionInfo? {
         guard let firstLine = readFirstLine(url: url) else { return nil }
         guard let data = firstLine.data(using: .utf8) else { return nil }

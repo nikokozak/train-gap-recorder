@@ -69,6 +69,8 @@ final class Recorder: ObservableObject {
 
     /// Nil when no session is open. In-flight probes check it before they write.
     private var writer: NDJSONWriter?
+    /// The open session's file, so that `discard` can delete it.
+    private var sessionFileURL: URL?
     /// All event times (`t_ms`) count from here, on `clockSeconds()`.
     private var sessionStartTime: TimeInterval = 0
     private var stopTappedTime: TimeInterval?
@@ -121,6 +123,7 @@ final class Recorder: ObservableObject {
         do {
             let newWriter = try NDJSONWriter(fileURL: fileURL)
             writer = newWriter
+            sessionFileURL = fileURL
             try await newWriter.append(makeSessionStartEvent(sessionID: sessionID, startedAt: startDate, line: line, config: config))
         } catch {
             writer = nil
@@ -187,16 +190,8 @@ final class Recorder: ObservableObject {
     func finish(endStationIndex: Int?, note: String?) async {
         guard isRecording, let finishingWriter = writer else { return }
 
-        stopSensors()
         let lastMotionEvent = takeMotionBatch()
-        // Clear the writer first: probes still in flight then drop their result
-        // instead of writing it after session_end.
-        writer = nil
-        isRecording = false
-        tickLoopTask?.cancel()
-        tickLoopTask = nil
-        UIApplication.shared.isIdleTimerDisabled = false
-
+        endRecording()
 
         let nowTime = Self.clockSeconds()
         let endTime = stopTappedTime ?? nowTime
@@ -226,6 +221,33 @@ final class Recorder: ObservableObject {
         await finishingWriter.close()
         stopTappedTime = nil
         await endActivity()
+    }
+
+    /// Ends the session without saving it: recording stops and the session file is deleted. For a
+    /// ride that went wrong, for example the wrong train.
+    func discard() async {
+        guard isRecording, let discardedWriter = writer, let fileURL = sessionFileURL else { return }
+        endRecording()
+        stopTappedTime = nil
+        await discardedWriter.close()
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch {
+            errorMessage = "Could not delete the recording: \(error.localizedDescription). Delete it in Sessions."
+        }
+        await endActivity()
+    }
+
+    /// Stops the sensors and the tick loop. The writer is cleared first: probes still in flight
+    /// then drop their result instead of writing after the end.
+    private func endRecording() {
+        stopSensors()
+        writer = nil
+        sessionFileURL = nil
+        isRecording = false
+        tickLoopTask?.cancel()
+        tickLoopTask = nil
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     // MARK: - Tick loop

@@ -74,6 +74,18 @@ struct SessionInfo: Identifiable, Hashable {
     var fileURL: URL
 }
 
+/// What a recording's detail screen shows beyond SessionInfo.
+struct SessionDetails {
+    /// False when the ride has no session_end: the app was ended before Stop.
+    var hasEnd = false
+    var durationSeconds: Int?
+    /// Nil for "Not sure".
+    var endStationName: String?
+    /// The note typed at Finish first, then the notes added later, oldest first.
+    var notes: [String] = []
+    var fileSizeBytes = 0
+}
+
 extension Line {
     func directionLabel(for direction: Direction) -> String {
         switch direction {

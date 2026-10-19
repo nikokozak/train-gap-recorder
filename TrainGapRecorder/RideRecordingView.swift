@@ -288,17 +288,20 @@ private struct MarkConfirmationPill: View {
 }
 
 /// Asks where the rider got off. This is the second anchor for station labels,
-/// so the rider must choose; "Not sure" is a valid answer.
+/// so the rider must choose; "Not sure" is a valid answer. A ride that went wrong can be
+/// discarded here instead.
 private struct FinishRideSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var recorder: Recorder
 
-    var onSaved: () -> Void
+    /// Called after the ride is saved or discarded.
+    var onEnded: () -> Void
 
     /// A station index, `notSureChoice`, or nil before the rider chooses.
     @State private var endStationChoice: Int?
     @State private var note = ""
     @State private var isSaving = false
+    @State private var isConfirmingDiscard = false
 
     private static let notSureChoice = -1
 
@@ -320,6 +323,7 @@ private struct FinishRideSheet: View {
                 Section("Note (optional)") {
                     TextField("Note", text: $note, axis: .vertical)
                         .lineLimit(3, reservesSpace: true)
+                        .autocorrectionDisabled()  // It turns station names like "Atlantic Av" into "Atlantic At".
                 }
             }
             .navigationTitle("Finish ride")
@@ -337,6 +341,21 @@ private struct FinishRideSheet: View {
                     }
                     .disabled(endStationChoice == nil || isSaving)
                 }
+                // At the bottom, so that it stays in reach above a long list of stations.
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Discard this ride", role: .destructive) {
+                        isConfirmingDiscard = true
+                    }
+                    .tint(.red)
+                    .disabled(isSaving)
+                    .confirmationDialog("Discard this ride?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
+                        Button("Discard ride", role: .destructive) {
+                            Task { await discard() }
+                        }
+                    } message: {
+                        Text("For a ride that went wrong, for example the wrong train. The recording is deleted; this cannot be undone.")
+                    }
+                }
             }
         }
         // The rider must choose Save or Keep recording; a swipe would leave the stop half done.
@@ -353,7 +372,13 @@ private struct FinishRideSheet: View {
         isSaving = true
         let endStationIndex = endStationChoice == Self.notSureChoice ? nil : endStationChoice
         await recorder.finish(endStationIndex: endStationIndex, note: note.isEmpty ? nil : note)
-        onSaved()
+        onEnded()
+    }
+
+    private func discard() async {
+        isSaving = true
+        await recorder.discard()
+        onEnded()
     }
 }
 
