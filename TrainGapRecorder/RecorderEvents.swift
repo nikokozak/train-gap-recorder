@@ -161,6 +161,21 @@ struct RecorderMotion: Codable {
         case zMilliG = "z_mg"
         case gravityMilliG = "gravity_mg"
     }
+
+    /// The RMS change between consecutive readings: rail vibration, not slow hand movement. The
+    /// stop detector uses the same measure (`joltMilliG` in internal/recording/stops.go).
+    var joltMilliG: Double? {
+        let readingCount = min(xMilliG.count, yMilliG.count, zMilliG.count)
+        guard readingCount >= 2 else { return nil }
+        var sumOfSquares = 0.0
+        for index in 1..<readingCount {
+            let changeX = Double(xMilliG[index] - xMilliG[index - 1])
+            let changeY = Double(yMilliG[index] - yMilliG[index - 1])
+            let changeZ = Double(zMilliG[index] - zMilliG[index - 1])
+            sumOfSquares += changeX * changeX + changeY * changeY + changeZ * changeZ
+        }
+        return (sumOfSquares / Double(readingCount - 1)).squareRoot()
+    }
 }
 
 /// One tick of STUN requests (StunProber), sent `intervalMS` apart from `tMS`. Each entry is a

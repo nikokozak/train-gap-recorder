@@ -24,8 +24,8 @@ final class Recorder: ObservableObject {
     static let staleSampleAge: TimeInterval = probeTimeout + 2.0
     /// Accelerometer rate. 20 Hz shows train vibration and braking; about 1.5 MB per 40-minute ride.
     static let motionHz = 20
-    /// The service strip on the ride screen shows this many recent probes, one per second.
-    static let serviceHistoryLength = 60
+    /// The charts on the ride screen show this many seconds.
+    static let chartSeconds = 60
 
     /// Rotated round-robin so that no single endpoint rate-limits us.
     static let probeURLs = [
@@ -47,8 +47,8 @@ final class Recorder: ObservableObject {
     @Published private(set) var anomalyMarkCount = 0
     /// The last mark, for the "Station marked" confirmation. A new mark replaces it.
     @Published private(set) var lastMark: MarkConfirmation?
-    /// Recent probe results, oldest first: true when the probe got through.
-    @Published private(set) var serviceHistory: [Bool] = []
+    /// The last `chartSeconds` of the ride for the charts, by second of the ride (`t_ms / 1000`).
+    @Published private(set) var recentSeconds: [Int: RideSecond] = [:]
     @Published private(set) var lastSample: RecorderSample?
     @Published private(set) var lastUDPProbe: RecorderUDPProbe?
     /// `clockSeconds()` when the last sample reached the file. The UI shows "saved N s ago" from it.
@@ -137,7 +137,7 @@ final class Recorder: ObservableObject {
         stationMarkCount = 0
         anomalyMarkCount = 0
         lastMark = nil
-        serviceHistory = []
+        recentSeconds = [:]
         lastSample = nil
         lastUDPProbe = nil
         lastSavedSampleTime = nil
@@ -197,6 +197,7 @@ final class Recorder: ObservableObject {
         tickLoopTask = nil
         UIApplication.shared.isIdleTimerDisabled = false
 
+
         let nowTime = Self.clockSeconds()
         let endTime = stopTappedTime ?? nowTime
         var endStation: Station?
@@ -252,8 +253,16 @@ final class Recorder: ObservableObject {
         startUDPProbe()
         if let motionEvent = takeMotionBatch() {
             Task { await write(motionEvent) }
+            recentSeconds[motionEvent.tMS / 1000, default: RideSecond()].joltMilliG = motionEvent.joltMilliG
         }
+        let oldestChartSecond = currentRideSecond - Self.chartSeconds
+        recentSeconds = recentSeconds.filter { $0.key > oldestChartSecond }
         refreshStatus()
+    }
+
+    /// The second of the ride now, on the clock of `t_ms`.
+    var currentRideSecond: Int {
+        nowTMS() / 1000
     }
 
     private func refreshStatus() {
@@ -294,8 +303,10 @@ final class Recorder: ObservableObject {
                 probeOKCount += 1
                 stunProber.restartIfStuck()
             }
-            let hadService = serviceHistory.last
-            serviceHistory = Array((serviceHistory + [probe.ok]).suffix(Self.serviceHistoryLength))
+            let hadService = lastSample?.probe.ok
+            // A failed probe finishes 4 s late; it still belongs to the second it started in.
+            recentSeconds[startTMS / 1000, default: RideSecond()].hasService = probe.ok
+            recentSeconds[startTMS / 1000, default: RideSecond()].roundTripMS = probe.ok ? probe.rttMS : nil
             lastSample = sample
             lastSavedSampleTime = Self.clockSeconds()
             if hadService != probe.ok {
@@ -314,6 +325,8 @@ final class Recorder: ObservableObject {
             let udpProbe = RecorderUDPProbe(tMS: startTMS, intervalMS: intervalMS, rttMS: roundTripsMS)
             guard await write(udpProbe) else { return }
             lastUDPProbe = udpProbe
+            recentSeconds[startTMS / 1000, default: RideSecond()].udpSentCount = roundTripsMS.count
+            recentSeconds[startTMS / 1000, default: RideSecond()].udpLostCount = roundTripsMS.filter { $0 == nil }.count
         }
     }
 
@@ -538,7 +551,7 @@ final class Recorder: ObservableObject {
 
     private var activityState: RecordingActivityAttributes.ContentState {
         RecordingActivityAttributes.ContentState(
-            hasService: serviceHistory.last ?? true,
+            hasService: lastSample?.probe.ok ?? true,
             stationMarkCount: stationMarkCount,
             anomalyMarkCount: anomalyMarkCount,
             lastMarkKind: lastMark?.kind,
@@ -639,6 +652,16 @@ final class Recorder: ObservableObject {
     private func playHaptic() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
+}
+
+/// One second of the ride, for the charts on the ride screen. Nil means not measured (yet).
+struct RideSecond {
+    /// The HTTPS probe that started in this second got through.
+    var hasService: Bool?
+    var roundTripMS: Int?
+    var udpSentCount = 0
+    var udpLostCount = 0
+    var joltMilliG: Double?
 }
 
 /// A mark that was saved, for the confirmation pill.

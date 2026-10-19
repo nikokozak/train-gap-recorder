@@ -28,6 +28,14 @@ struct RideRecordingView: View {
 
                 warnings
 
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    RideCharts(
+                        recentSeconds: recorder.recentSeconds,
+                        currentSecond: recorder.currentRideSecond,
+                        isMotionAvailable: recorder.isMotionAvailable
+                    )
+                }
+
                 DisclosureGroup("Details") {
                     details.padding(.top, 8)
                 }
@@ -88,7 +96,7 @@ struct RideRecordingView: View {
         }
     }
 
-    /// Recording state, elapsed time, the signal now, the last minute of service, and the marks.
+    /// Recording state, elapsed time, the signal now, and the marks.
     private func statusCard(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
@@ -109,13 +117,6 @@ struct RideRecordingView: View {
                 Text(sampleAgeText)
                     .font(.footnote)
                     .foregroundStyle(isSampleStale(now: now) ? .red : .secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                ServiceStrip(history: recorder.serviceHistory)
-                Text("Service in the last minute. Red is a second without service.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 20) {
@@ -283,25 +284,6 @@ private struct MarkConfirmationPill: View {
             .padding(.vertical, 10)
             .background(.regularMaterial, in: Capsule())
             .shadow(radius: 6, y: 2)
-    }
-}
-
-/// One cell per recent probe, newest at the right: green when it got through, red when not.
-private struct ServiceStrip: View {
-    var history: [Bool]
-
-    var body: some View {
-        let emptyCellCount = Recorder.serviceHistoryLength - history.count
-        HStack(spacing: 1) {
-            ForEach(0..<Recorder.serviceHistoryLength, id: \.self) { index in
-                let historyIndex = index - emptyCellCount
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(historyIndex < 0 ? Color.secondary.opacity(0.15) : (history[historyIndex] ? Color.green : Color.red))
-            }
-        }
-        .frame(height: 16)
-        .accessibilityElement()
-        .accessibilityLabel("Service in the last minute: \(history.filter { $0 }.count) of \(history.count) probes got through")
     }
 }
 
