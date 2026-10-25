@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+
+# Agent instructions (local only). AGENTS.md is a symlink to CLAUDE.md.
+CLAUDE.md
+AGENTS.md
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+build/
+DerivedData/
