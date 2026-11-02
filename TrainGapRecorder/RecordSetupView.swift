@@ -15,8 +15,9 @@ struct RecordSetupView: View {
     @State private var isStarting = false
     @State private var isShowingRide = false
 
-    /// iOS no longer reports the carrier name, so the rider chooses it.
-    private static let carriers = ["AT&T", "Verizon", "T-Mobile", "Other"]
+    /// iOS no longer reports the carrier name, so the rider chooses it. A carrier that runs on
+    /// another's network names that network too: coverage follows the network.
+    private static let carriers = ["AT&T", "Verizon", "T-Mobile", "Mint (T-Mobile)", "Other"]
 
     var body: some View {
         Form {
